@@ -5,11 +5,18 @@ from pathlib import Path
 from typing import List, TypedDict
 
 
+class Library(TypedDict):
+    name: str
+    sources: List[str]
+    include_dirs: List[str]
+
+
 class Target(TypedDict):
     name: str
     sources: List[str]
     packages: List[str]
     ldflags: List[str]
+    libs: List[str]
 
 
 def cmd_output(*args):
@@ -50,6 +57,91 @@ def linker_flags(args: List[str]):
     return flags
 
 
+def build_library(
+    lib: Library,
+    build_dir: Path,
+    use_gcc: bool,
+    warnings: List[str],
+    clang_warnings: List[str],
+    mode_flags: List[str],
+) -> tuple[Path, List[str], List[Path]]:
+    name = lib["name"]
+    sources = lib["sources"]
+    include_dirs = lib["include_dirs"]
+
+    include_flags = [f"-I{d}" for d in include_dirs]
+    obj_dir = build_dir / name
+    obj_dir.mkdir(exist_ok=True)
+
+    obj_files: List[str] = []
+    mj_files: List[Path] = []
+
+    for src in sources:
+        stem = Path(src).stem
+        obj = obj_dir / f"{stem}.o"
+        mj_file = obj_dir / f"{stem}.mj"
+        obj_files.append(str(obj))
+        mj_files.append(mj_file)
+
+        if use_gcc:
+            cmd_run(
+                *clang(
+                    *clang_warnings,
+                    *mode_flags,
+                    *include_flags,
+                    src,
+                    "-fsyntax-only",
+                    "-MJ",
+                    str(mj_file),
+                )
+            )
+            cmd_run(
+                *gcc(
+                    *warnings, *mode_flags, *include_flags, "-c", src, "-o", str(obj)
+                ),
+            )
+        else:
+            cmd_run(
+                *clang(
+                    *warnings,
+                    *mode_flags,
+                    *include_flags,
+                    "-c",
+                    src,
+                    "-o",
+                    str(obj),
+                    "-MJ",
+                    str(mj_file),
+                )
+            )
+
+    archive = build_dir / f"lib{name}.a"
+    cmd_run("ar", "rcs", str(archive), *obj_files)
+
+    return archive, include_flags, mj_files
+
+
+def build_libraries(
+    libraries: List[Library],
+    build_dir: Path,
+    use_gcc: bool,
+    warnings: List[str],
+    clang_warnings: List[str],
+    mode_flags: List[str],
+) -> tuple[dict[str, tuple[Path, List[str]]], List[Path]]:
+    built_libs: dict[str, tuple[Path, List[str]]] = {}
+    all_mj_files: List[Path] = []
+
+    for lib in libraries:
+        archive, include_flags, mj_files = build_library(
+            lib, build_dir, use_gcc, warnings, clang_warnings, mode_flags
+        )
+        built_libs[lib["name"]] = (archive, include_flags)
+        all_mj_files.extend(mj_files)
+
+    return built_libs, all_mj_files
+
+
 def build_target(
     target: Target,
     build_dir: Path,
@@ -57,14 +149,23 @@ def build_target(
     warnings: List[str],
     clang_warnings: List[str],
     mode_flags: List[str],
+    built_libs: dict[str, tuple[Path, List[str]]],
 ) -> tuple[Path, Path]:
     name = target["name"]
     sources = target["sources"]
     packages = target["packages"]
     extra_ldflags = target["ldflags"]
+    libs = target["libs"]
 
     cflags = compiler_flags(packages)
     ldflags = linker_flags(packages) + extra_ldflags
+
+    lib_include_flags: List[str] = []
+    lib_archives: List[str] = []
+    for lib_name in libs:
+        archive, include_flags = built_libs[lib_name]
+        lib_include_flags.extend(include_flags)
+        lib_archives.append(str(archive))
 
     binary = build_dir / name
     mj_file = build_dir / f"{name}.mj"
@@ -75,6 +176,7 @@ def build_target(
                 *clang_warnings,
                 *mode_flags,
                 *cflags,
+                *lib_include_flags,
                 *sources,
                 "-fsyntax-only",
                 "-MJ",
@@ -83,7 +185,15 @@ def build_target(
         )
         cmd_run(
             *gcc(
-                *warnings, *mode_flags, *cflags, *sources, "-o", str(binary), *ldflags
+                *warnings,
+                *mode_flags,
+                *cflags,
+                *lib_include_flags,
+                *sources,
+                "-o",
+                str(binary),
+                *lib_archives,
+                *ldflags,
             ),
         )
     else:
@@ -92,9 +202,11 @@ def build_target(
                 *warnings,
                 *mode_flags,
                 *cflags,
+                *lib_include_flags,
                 *sources,
                 "-o",
                 str(binary),
+                *lib_archives,
                 *ldflags,
                 "-MJ",
                 str(mj_file),
@@ -112,12 +224,13 @@ def build_targets(
     warnings: List[str],
     clang_warnings: List[str],
     mode_flags: List[str],
+    built_libs: dict[str, tuple[Path, List[str]]],
 ) -> tuple[List[Path], List[Path]]:
     test_binaries: List[Path] = []
     mj_files: List[Path] = []
     for target in targets:
         binary, mj_file = build_target(
-            target, build_dir, use_gcc, warnings, clang_warnings, mode_flags
+            target, build_dir, use_gcc, warnings, clang_warnings, mode_flags, built_libs
         )
         mj_files.append(mj_file)
         if target in test_targets:

@@ -1,4 +1,4 @@
-#include "radtest.h"
+#include "utest.h"
 #include "../src/geometry.h"
 
 static void test_point_default(void)

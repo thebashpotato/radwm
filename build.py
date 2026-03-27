@@ -7,7 +7,6 @@ from typing import List
 
 import bs
 
-
 WARNINGS = [
     "-std=c99",
     "-Wall",
@@ -74,12 +73,15 @@ RELEASE_FLAGS = [
     "-DNDEBUG",
 ]
 
+LIBRARIES: List[bs.Library] = []
+
 TARGETS: List[bs.Target] = [
     {
         "name": "radwm",
         "sources": ["src/geometry.c", "src/client.c", "src/main.c"],
         "packages": ["x11", "xrandr"],
         "ldflags": ["-lm"],
+        "libs": [],
     },
 ]
 
@@ -89,6 +91,7 @@ TEST_TARGETS: List[bs.Target] = [
         "sources": ["src/geometry.c", "tests/geometry_tests.c"],
         "packages": [],
         "ldflags": ["-lm"],
+        "libs": [],
     },
 ]
 
@@ -121,10 +124,20 @@ def main():
     if args.tests:
         targets.extend(TEST_TARGETS)
 
-    test_binaries, mj_files = bs.build_targets(
-        targets, TEST_TARGETS, build_dir, args.gcc, warnings, clang_warnings, mode_flags
+    built_libs, lib_mj_files = bs.build_libraries(
+        LIBRARIES, build_dir, args.gcc, warnings, clang_warnings, mode_flags
     )
-    bs.generate_compile_commands(build_dir, mj_files)
+    test_binaries, mj_files = bs.build_targets(
+        targets,
+        TEST_TARGETS,
+        build_dir,
+        args.gcc,
+        warnings,
+        clang_warnings,
+        mode_flags,
+        built_libs,
+    )
+    bs.generate_compile_commands(build_dir, lib_mj_files + mj_files)
 
     if args.tests and test_binaries:
         bs.run_tests(test_binaries)

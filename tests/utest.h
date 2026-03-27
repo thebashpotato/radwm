@@ -1,19 +1,19 @@
-#ifndef RADTEST_H
-#define RADTEST_H
+#ifndef UTEST_H
+#define UTEST_H
 
 #include <stdio.h>
 
-static int radtest_passes = 0;
-static int radtest_fails = 0;
+static int utest_passes = 0;
+static int utest_fails = 0;
 
 #define ASSERT(expr)                                                    \
 	do {                                                            \
 		if (!(expr)) {                                          \
 			printf("  FAIL: %s (%s:%d)\n", #expr, __FILE__, \
 			       __LINE__);                               \
-			radtest_fails++;                                \
+			utest_fails++;                                  \
 		} else {                                                \
-			radtest_passes++;                               \
+			utest_passes++;                                 \
 		}                                                       \
 	} while (0)
 
@@ -24,8 +24,8 @@ static int radtest_fails = 0;
 	} while (0)
 
 #define TEST_SUMMARY() \
-	printf("\n  %d passed, %d failed\n", radtest_passes, radtest_fails)
+	printf("\n  %d passed, %d failed\n", utest_passes, utest_fails)
 
-#define TEST_EXIT() return (radtest_fails > 0) ? 1 : 0
+#define TEST_EXIT() return (utest_fails > 0) ? 1 : 0
 
 #endif
